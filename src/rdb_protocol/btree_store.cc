@@ -86,7 +86,8 @@ store_t::store_t(const region_t &_region,
                  io_backender_t *io_backender,
                  const base_path_t &base_path,
                  namespace_id_t _table_id,
-                 update_sindexes_t _update_sindexes)
+                 update_sindexes_t _update_sindexes,
+                 which_cpu_shard_t which_cpu_shard)
     : store_view_t(_region),
       perfmon_collection(),
       io_backender_(io_backender), base_path_(base_path),
@@ -95,7 +96,7 @@ store_t::store_t(const region_t &_region,
       table_id(_table_id),
       write_superblock_acq_semaphore(WRITE_SUPERBLOCK_ACQ_WAITERS_LIMIT)
 {
-    cache.init(new cache_t(serializer, balancer, &perfmon_collection));
+    cache.init(new cache_t(serializer, balancer, &perfmon_collection, which_cpu_shard));
     general_cache_conn.init(new cache_conn_t(cache.get()));
 
     if (create) {
@@ -391,7 +392,7 @@ void store_t::sindex_create(
     guarantee(write_res == 0);
 
     sindex_name_t sindex_name(name);
-    boost::optional<uuid_u> sindex_id = add_sindex_internal(
+    optional<uuid_u> sindex_id = add_sindex_internal(
         sindex_name, stream.vector(), &sindex_block);
     guarantee(sindex_id, "sindex_create() called with a sindex name that exists");
 
@@ -484,6 +485,10 @@ void store_t::sindex_drop(
 
     sindex_block.reset_buf_lock();
     txn->commit();
+}
+
+void store_t::configure_flush_interval(flush_interval_t interval) {
+    cache->configure_flush_interval(interval);
 }
 
 new_mutex_in_line_t store_t::get_in_line_for_sindex_queue(buf_lock_t *sindex_block) {
@@ -621,13 +626,13 @@ microtime_t store_t::get_sindex_start_time(uuid_u const &id) {
     }
 }
 
-boost::optional<uuid_u> store_t::add_sindex_internal(
+optional<uuid_u> store_t::add_sindex_internal(
         const sindex_name_t &name,
         const std::vector<char> &opaque_definition,
         buf_lock_t *sindex_block) {
     secondary_index_t sindex;
     if (::get_secondary_index(sindex_block, name, &sindex)) {
-        return boost::none; // sindex was already created
+        return r_nullopt; // sindex was already created
     } else {
         {
             buf_lock_t sb_lock(sindex_block, alt_create_t::create);
@@ -648,7 +653,7 @@ boost::optional<uuid_u> store_t::add_sindex_internal(
         sindex.needs_post_construction_range = key_range_t::universe();
 
         ::set_secondary_index(sindex_block, name, sindex);
-        return sindex.id;
+        return make_optional(sindex.id);
     }
 }
 
@@ -1115,13 +1120,13 @@ void store_t::acquire_all_sindex_superblocks_for_write(
         sindex_access_vector_t *sindex_sbs_out)
     THROWS_ONLY(sindex_not_ready_exc_t) {
     acquire_sindex_superblocks_for_write(
-            boost::none,
+            r_nullopt,
             sindex_block,
             sindex_sbs_out);
 }
 
 bool store_t::acquire_sindex_superblocks_for_write(
-            boost::optional<std::set<uuid_u> > sindexes_to_acquire, //none means acquire all sindexes
+            optional<std::set<uuid_u> > sindexes_to_acquire, //none means acquire all sindexes
             buf_lock_t *sindex_block,
             sindex_access_vector_t *sindex_sbs_out)
     THROWS_ONLY(sindex_not_ready_exc_t) {

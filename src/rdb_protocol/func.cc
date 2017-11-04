@@ -6,7 +6,7 @@
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/minidriver.hpp"
 #include "rdb_protocol/pseudo_literal.hpp"
-#include "rdb_protocol/ql2.pb.h"
+#include "rdb_protocol/ql2proto.hpp"
 #include "rdb_protocol/term_walker.hpp"
 #include "stl_utils.hpp"
 
@@ -33,8 +33,8 @@ scoped_ptr_t<val_t> func_t::call(env_t *env,
     return call(env, make_vector(arg1, arg2), eval_flags);
 }
 
-void func_t::assert_deterministic(const char *extra_msg) const {
-    rcheck(is_deterministic() == deterministic_t::always,
+void func_t::assert_deterministic(constant_now_t cn, const char *extra_msg) const {
+    rcheck(is_deterministic().test(single_server_t::no, cn),
            base_exc_t::LOGIC,
            strprintf("Could not prove function deterministic.  %s", extra_msg));
 }
@@ -87,8 +87,8 @@ scoped_ptr_t<val_t> reql_func_t::call(env_t *env,
     }
 }
 
-boost::optional<size_t> reql_func_t::arity() const {
-    return arg_names.size();
+optional<size_t> reql_func_t::arity() const {
+    return make_optional(arg_names.size());
 }
 
 deterministic_t reql_func_t::is_deterministic() const {
@@ -136,12 +136,12 @@ scoped_ptr_t<val_t> js_func_t::call(
     }
 }
 
-boost::optional<size_t> js_func_t::arity() const {
-    return boost::none;
+optional<size_t> js_func_t::arity() const {
+    return r_nullopt;
 }
 
 deterministic_t js_func_t::is_deterministic() const {
-    return deterministic_t::no;
+    return deterministic_t::no();
 }
 
 void reql_func_t::visit(func_visitor_t *visitor) const {
@@ -280,7 +280,7 @@ std::string reql_func_t::print_source() const {
         ret += pprint::print_var(arg_names[i].value);
     }
     ret += "]) ";
-    ret += pprint::pretty_print(80, pprint::render_as_javascript(body->get_src()));
+    ret += pprint::pretty_print_as_js(80, body->get_src());
     return ret;
 }
 
@@ -297,7 +297,7 @@ std::string reql_func_t::print_js_function() const {
         ret += pprint::print_var(arg_names[i].value);
     }
     ret += ") { return ";
-    ret += pprint::pretty_print(80, pprint::render_as_javascript(body->get_src()));
+    ret += pprint::pretty_print_as_js(80, body->get_src());
     ret += "; }";
     return ret;
 }

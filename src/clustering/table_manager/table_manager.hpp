@@ -5,6 +5,7 @@
 #include "clustering/table_contract/coordinator/coordinator.hpp"
 #include "clustering/table_contract/executor/executor.hpp"
 #include "clustering/table_manager/backfill_progress_tracker.hpp"
+#include "clustering/table_manager/flush_interval_manager.hpp"
 #include "clustering/table_manager/server_name_cache_updater.hpp"
 #include "clustering/table_manager/sindex_manager.hpp"
 #include "clustering/table_manager/table_metadata.hpp"
@@ -79,9 +80,7 @@ private:
         void on_set_config(
             signal_t *interruptor,
             const table_config_and_shards_change_t &table_config_and_shards_change,
-            const mailbox_t<void(
-                boost::optional<multi_table_manager_timestamp_t>, bool
-                )>::address_t &reply_addr);
+            const mailbox_addr_t<optional<multi_table_manager_timestamp_t>, bool> &reply_addr);
 
         table_manager_t * const parent;
         minidir_read_manager_t<std::pair<server_id_t, contract_id_t>, contract_ack_t>
@@ -181,6 +180,10 @@ private:
     /* The `sindex_manager` watches the `table_config_t` and changes the sindexes on
     `multistore_ptr` according to what it sees. */
     sindex_manager_t sindex_manager;
+
+    /* The `flush_interval_manager` watches the `table_config_t` and changes the flush
+    interval according to what it sees. */
+    flush_interval_manager_t flush_interval_manager;
 
     auto_drainer_t drainer;
 

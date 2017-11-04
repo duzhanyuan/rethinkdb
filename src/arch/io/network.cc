@@ -20,9 +20,6 @@
 #include <sys/socket.h>
 #endif
 
-#include "utils.hpp"
-#include <boost/bind.hpp>
-
 #include "arch/runtime/runtime.hpp"
 #include "arch/runtime/thread_pool.hpp"
 #include "arch/timing.hpp"
@@ -83,13 +80,13 @@ void async_connect(fd_t socket, sockaddr *sa, size_t sa_len,
     DWORD error = GetLastError();
     if (!res && error != ERROR_IO_PENDING) {
         op.set_cancel();
-        logERR("connect failed: %s", winerr_string(error).c_str());
+        winsock_debugf("connect failed: %s", winerr_string(error).c_str());
         throw linux_tcp_conn_t::connect_failed_exc_t(EIO);
     }
     winsock_debugf("waiting for connection on %x\n", socket);
     op.wait_interruptible(interuptor);
     if (op.error != NO_ERROR) {
-        logERR("ConnectEx failed: %s", winerr_string(op.error).c_str());
+        winsock_debugf("ConnectEx failed: %s", winerr_string(op.error).c_str());
         throw linux_tcp_conn_t::connect_failed_exc_t(EIO);
     }
     winsock_debugf("connected %x\n", socket);
@@ -233,6 +230,10 @@ linux_tcp_conn_t::linux_tcp_conn_t(const ip_address_t &peer,
         // Disable Nagle algorithm just as in the listener case
         int sockoptval = 1;
         int res = setsockopt(fd_to_socket(sock.get()), IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&sockoptval), sizeof(sockoptval));
+        if (res == -1 && get_errno() == EINVAL) {
+            // On OS X, EINVAL means the socket was closed.
+            throw connect_failed_exc_t(get_errno());
+        }
         guarantee_err(res != -1, "Could not set TCP_NODELAY option");
     }
 
@@ -263,14 +264,18 @@ linux_tcp_conn_t::linux_tcp_conn_t(fd_t s) :
 #endif
 }
 
-void linux_tcp_conn_t::enable_keepalive() {
+void linux_tcp_conn_t::enable_keepalive() THROWS_ONLY(tcp_conn_write_closed_exc_t) {
     int optval = 1;
 #ifdef _WIN32
     int res = setsockopt(fd_to_socket(sock.get()), SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<char*>(&optval), sizeof(optval));
 #else
     int res = setsockopt(sock.get(), SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
 #endif
-    guarantee(res != -1, "Could not set SO_KEEPALIVE option.");
+    if (res == -1 && get_errno() == EINVAL) {
+        // On OS X, EINVAL means the socket was closed.
+        throw tcp_conn_write_closed_exc_t();
+    }
+    guarantee_err(res != -1, "Could not set SO_KEEPALIVE option.");
 }
 
 linux_tcp_conn_t::write_buffer_t * linux_tcp_conn_t::get_write_buffer() {

@@ -164,7 +164,7 @@ def csv_writer(filename, fields, delimiter, task_queue, error_queue):
         while not isinstance(task_queue.get(), StopIteration):
             pass
 
-def export_table(db, table, directory, options, error_queue, progress_info, sindex_counter, exit_event):
+def export_table(db, table, directory, options, error_queue, progress_info, sindex_counter, hook_counter, exit_event):
     signal.signal(signal.SIGINT, signal.SIG_DFL) # prevent signal handlers from being set in child processes
     
     writer = None
@@ -178,17 +178,24 @@ def export_table(db, table, directory, options, error_queue, progress_info, sind
         table_info['indexes'] = options.retryQuery(
             'table index data %s.%s' % (db, table),
             query.db(db).table(table).index_status(),
-            runOptions={'binary_format':'raw'}
+            run_options={'binary_format':'raw'}
         )
         
+        sindex_counter.value += len(table_info["indexes"])
+
+        table_info['write_hook'] = options.retryQuery(
+            'table write hook data %s.%s' % (db, table),
+            query.db(db).table(table).get_write_hook(),
+            run_options={'binary_format':'raw'})
+
+        if table_info['write_hook'] != None:
+            hook_counter.value += 1
+
         with open(os.path.join(directory, db, table + '.info'), 'w') as info_file:
             info_file.write(json.dumps(table_info) + "\n")
-        
         with sindex_counter.get_lock():
             sindex_counter.value += len(table_info["indexes"])
-        
         # -- start the writer
-        
         task_queue = SimpleQueue()
         writer = None
         if options.format == "json":
@@ -210,16 +217,16 @@ def export_table(db, table, directory, options, error_queue, progress_info, sind
         
         lastPrimaryKey = None
         read_rows      = 0
-        runOptions     = {
+        run_options     = {
             "time_format":"raw",
             "binary_format":"raw"
         }
         if options.outdated:
-            runOptions["read_mode"] = "outdated"
+            run_options["read_mode"] = "outdated"
         cursor = options.retryQuery(
             'inital cursor for %s.%s' % (db, table),
             query.db(db).table(table).order_by(index=table_info["primary_key"]),
-            runOptions=runOptions
+            run_options=run_options
         )
         while not exit_event.is_set():
             try:
@@ -251,7 +258,7 @@ def export_table(db, table, directory, options, error_queue, progress_info, sind
                 cursor = options.retryQuery(
                     'backup cursor for %s.%s' % (db, table),
                     query.db(db).table(table).between(lastPrimaryKey, None, left_bound="open").order_by(index=table_info["primary_key"]),
-                    runOptions=runOptions
+                    run_options=run_options
                 )
     
     except (errors.ReqlError, errors.ReqlDriverError) as ex:
@@ -296,7 +303,8 @@ def run_clients(options, workingDir, db_table_set):
     error_queue = SimpleQueue()
     interrupt_event = multiprocessing.Event()
     sindex_counter = multiprocessing.Value(ctypes.c_longlong, 0)
-
+    hook_counter = multiprocessing.Value(ctypes.c_longlong, 0)
+    
     signal.signal(signal.SIGINT, lambda a, b: abort_export(a, b, exit_event, interrupt_event))
     errors = []
 
@@ -315,6 +323,7 @@ def run_clients(options, workingDir, db_table_set):
                               error_queue,
                               progress_info[-1],
                               sindex_counter,
+                              hook_counter,
                               exit_event,
                               ))
 
@@ -346,10 +355,12 @@ def run_clients(options, workingDir, db_table_set):
             return "%d %s" % (num, text if num == 1 else plural_text)
 
         if not options.quiet:
-            print("\n    %s exported from %s, with %s" %
+            print("\n    %s exported from %s, with %s, and %s" %
                   (plural(sum([max(0, info[0].value) for info in progress_info]), "row", "rows"),
                    plural(len(db_table_set), "table", "tables"),
-                   plural(sindex_counter.value, "secondary index", "secondary indexes")))
+                   plural(sindex_counter.value, "secondary index", "secondary indexes"),
+                   plural(hook_counter.value, "hook function", "hook functions")
+            ))
     finally:
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 

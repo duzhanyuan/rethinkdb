@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "errors.hpp"
-#include <boost/optional.hpp>
 #include <boost/variant/static_visitor.hpp>
 
 #include "containers/counted.hpp"
@@ -36,7 +35,7 @@ public:
         const std::vector<datum_t> &args,
         eval_flags_t eval_flags = NO_FLAGS) const = 0;
 
-    virtual boost::optional<size_t> arity() const = 0;
+    virtual optional<size_t> arity() const = 0;
 
     virtual deterministic_t is_deterministic() const = 0;
 
@@ -50,7 +49,7 @@ public:
 
     virtual void visit(func_visitor_t *visitor) const = 0;
 
-    void assert_deterministic(const char *extra_msg) const;
+    void assert_deterministic(constant_now_t cn, const char *extra_msg) const;
 
     bool filter_call(env_t *env,
                      datum_t arg,
@@ -99,7 +98,7 @@ public:
         const std::vector<datum_t> &args,
         eval_flags_t eval_flags) const;
 
-    boost::optional<size_t> arity() const;
+    optional<size_t> arity() const;
 
     deterministic_t is_deterministic() const;
 
@@ -143,7 +142,7 @@ public:
                              const std::vector<datum_t> &args,
                              eval_flags_t eval_flags) const;
 
-    boost::optional<size_t> arity() const;
+    optional<size_t> arity() const;
 
     deterministic_t is_deterministic() const;
 

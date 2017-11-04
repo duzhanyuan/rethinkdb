@@ -295,9 +295,14 @@ class SocketWrapper(object):
                         self._socket = ssl.wrap_socket(
                             self._socket, cert_reqs=ssl.CERT_REQUIRED, ssl_version=ssl.PROTOCOL_SSLv23,
                             ca_certs=self.ssl["ca_certs"])
-                except IOError as exc:
+                except IOError as err:
                     self._socket.close()
-                    raise ReqlDriverError("SSL handshake failed (see server log for more information): %s" % str(exc))
+                    
+                    if 'EOF occurred in violation of protocol' in str(err) or 'sslv3 alert handshake failure' in str(err):
+                        # probably on an older version of OpenSSL
+                        raise ReqlDriverError("SSL handshake failed, likely because Python is linked against an old version of OpenSSL that does not support either TLSv1.2 or any of the allowed ciphers. This can be worked around by lowering the security setting on the server with the options `--tls-min-protocol TLSv1 --tls-ciphers EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH:AES256-SHA` (see server log for more information): %s" % str(err))
+                    else:
+                        raise ReqlDriverError("SSL handshake failed (see server log for more information): %s" % str(err))
                 try:
                     match_hostname(self._socket.getpeercert(), hostname=self.host)
                 except CertificateError:
@@ -314,7 +319,7 @@ class SocketWrapper(object):
                 # an optimization, then need to read each separately
                 if request is not "":
                     self.sendall(request)
-                
+
                 # The response from the server is a null-terminated string
                 response = b''
                 while True:
@@ -662,7 +667,7 @@ def connect(host=None, port=None, db=None, auth_key=None, user=None, password=No
         ssl = dict()
     if _handshake_version is None:
         _handshake_version = 10
-    
+
     conn = connection_type(host, port, db, auth_key, user, password, timeout, ssl, _handshake_version, **kwargs)
     return conn.reconnect(timeout=timeout)
 

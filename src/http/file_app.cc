@@ -4,9 +4,6 @@
 
 #include <string>
 
-#include "errors.hpp"
-#include <boost/bind.hpp>
-
 #include "debug.hpp"
 #include "arch/runtime/thread_pool.hpp"   /* for `run_in_blocker_pool()` */
 #include "containers/archive/file_stream.hpp"
@@ -57,13 +54,13 @@ void file_http_app_t::handle(const http_req_t &req, http_res_t *result, signal_t
     time_t expires;
 #ifndef NDEBUG
     // In debug mode, do not cache static web assets
-    expires = get_secs() - 31536000; // Some time in the past (one year ago)
+    expires = get_realtime_secs() - 31536000; // Some time in the past (one year ago)
 #else
     // In release mode, cache static web assets except index.html
     if (filename == "/index.html") {
-        expires = get_secs() - 31536000; // Some time in the past (one year ago)
+        expires = get_realtime_secs() - 31536000; // Some time in the past (one year ago)
     } else {
-        expires = get_secs() + 31536000; // One year from now
+        expires = get_realtime_secs() + 31536000; // One year from now
     }
 #endif
     result->add_header_line("Expires", http_format_date(expires));
@@ -97,7 +94,7 @@ void file_http_app_t::handle(const http_req_t &req, http_res_t *result, signal_t
         result->body.assign(resource_data.begin(), resource_data.end());
         result->code = http_status_code_t::OK;
     } else {
-        thread_pool_t::run_in_blocker_pool(boost::bind(&file_http_app_t::handle_blocking, this, filename, result));
+        thread_pool_t::run_in_blocker_pool(std::bind(&file_http_app_t::handle_blocking, this, filename, result));
 
         if (result->code == http_status_code_t::NOT_FOUND) {
             logNTC("File %s was requested and is on the whitelist but we didn't find it in the directory.", (asset_dir + filename).c_str());

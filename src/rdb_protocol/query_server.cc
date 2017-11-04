@@ -2,8 +2,9 @@
 #include "rdb_protocol/query_server.hpp"
 
 #include "perfmon/perfmon.hpp"
+#include "rdb_protocol/pseudo_time.hpp"
 #include "rdb_protocol/rdb_backtrace.hpp"
-#include "rdb_protocol/ql2.pb.h"
+#include "rdb_protocol/ql2proto.hpp"
 #include "rdb_protocol/query_cache.hpp"
 #include "rdb_protocol/query_params.hpp"
 #include "rdb_protocol/response.hpp"
@@ -41,7 +42,8 @@ void rdb_query_server_t::run_query(ql::query_params_t *query_params,
         switch (query_params->type) {
         case Query::START: {
             scoped_ptr_t<ql::query_cache_t::ref_t> query_ref =
-                query_params->query_cache->create(query_params, interruptor);
+                query_params->query_cache->create(query_params, ql::pseudo::time_now(),
+                                                  interruptor);
             query_ref->fill_response(response_out);
         } break;
         case Query::CONTINUE: {
@@ -87,11 +89,11 @@ void rdb_query_server_t::fill_server_info(ql::response_t *out) {
     ql::datum_object_builder_t builder;
     builder.overwrite(datum_string_t("id"), ql::datum_t(id));
 
-    boost::optional<server_config_versioned_t> server_conf =
+    optional<server_config_versioned_t> server_conf =
         server_config_client->get_server_config_map()->get_key(server_id);
 
     bool is_proxy;
-    if (server_conf) {
+    if (server_conf.has_value()) {
         // The local server always exists on persistent nodes
         builder.overwrite(datum_string_t("name"),
                 ql::datum_t(datum_string_t(server_conf->config.name.str())));

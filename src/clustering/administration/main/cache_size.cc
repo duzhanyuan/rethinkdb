@@ -1,5 +1,6 @@
 #include "clustering/administration/main/cache_size.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <string>
 
@@ -12,7 +13,7 @@
 #include <unistd.h>
 
 #if defined(__MACH__)
-#include <availability.h>
+#include <Availability.h>
 #include <errno.h>
 #include <mach/mach.h>
 #include <sys/sysctl.h>
@@ -21,6 +22,7 @@
 #include "arch/runtime/thread_pool.hpp"
 #include "arch/types.hpp"
 #include "logger.hpp"
+#include "paths.hpp"
 #include "utils.hpp"
 
 #ifndef __MACH__
@@ -282,7 +284,7 @@ uint64_t get_avail_mem_size() {
     }
 #ifdef __MAC_OS_X_VERSION_MIN_REQUIRED
     // We know the field we want showed up in 10.9.  It may have shown
-    // up in 10.8, but is definitely not in 10.7.  Per availability.h,
+    // up in 10.8, but is definitely not in 10.7.  Per Availability.h,
     // we use a raw number rather than the corresponding #define.
     uint64_t ret;
     if (!osx_runtime_version_check()) {

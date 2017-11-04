@@ -25,6 +25,7 @@ table_config_and_shards_t make_table_config_and_shards() {
     calculate_split_points_for_uuids(1, &table_config_and_shards.shard_scheme);
     table_config_and_shards.config.write_ack_config = write_ack_config_t::MAJORITY;
     table_config_and_shards.config.durability = write_durability_t::HARD;
+    table_config_and_shards.config.user_data = default_user_data();
     table_config_and_shards.server_names.names[shard.primary_replica] =
         std::make_pair(0ul, name_string_t::guarantee_valid("primary"));
 
@@ -244,7 +245,7 @@ TPTEST(ClusteringRaft, StorageWriteLogReplaceTail) {
     raft_log_entry.term = 1;
     table_raft_state_t::change_t::set_table_config_t set_table_config;
     set_table_config.new_config = make_table_config_and_shards();
-    raft_log_entry.change = set_table_config;
+    raft_log_entry.change.set(set_table_config);
 
     raft_log_t<table_raft_state_t> raft_log;
     raft_log.prev_index = 0;
@@ -299,7 +300,7 @@ TPTEST(ClusteringRaft, StorageWriteLogAppendOne) {
     raft_log_entry.term = 1;
     table_raft_state_t::change_t::set_table_config_t set_table_config;
     set_table_config.new_config = make_table_config_and_shards();
-    raft_log_entry.change = set_table_config;
+    raft_log_entry.change.set(set_table_config);
 
     {
         scoped_ptr_t<table_raft_storage_interface_t> table_raft_storage_interface;

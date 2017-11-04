@@ -33,7 +33,8 @@ TPTEST(BTreeSindex, LowLevelOps) {
         &file_opener,
         &get_global_perfmon_collection());
 
-    cache_t cache(&serializer, &balancer, &get_global_perfmon_collection());
+    cache_t cache(&serializer, &balancer, &get_global_perfmon_collection(),
+                  which_cpu_shard_t{0, 1});
     cache_conn_t cache_conn(&cache);
 
     {
@@ -169,7 +170,8 @@ TPTEST(BTreeSindex, BtreeStoreAPI) {
             &io_backender,
             base_path_t("."),
             generate_uuid(),
-            update_sindexes_t::UPDATE);
+            update_sindexes_t::UPDATE,
+            which_cpu_shard_t{0, 1});
 
     cond_t dummy_interruptor;
 
@@ -178,7 +180,7 @@ TPTEST(BTreeSindex, BtreeStoreAPI) {
     for (int i = 0; i < 50; ++i) {
         sindex_name_t name = sindex_name_t(uuid_to_str(generate_uuid()));
         created_sindexs.insert(name);
-        boost::optional<uuid_u> index_id;
+        optional<uuid_u> index_id;
         {
             write_token_t token;
             store.new_write_token(&token);
@@ -229,7 +231,7 @@ TPTEST(BTreeSindex, BtreeStoreAPI) {
                 ql::skey_version_t::post_1_16,
                 "sec",
                 store_key_t("pri"),
-                boost::none));
+                r_nullopt));
 
         {
             //Insert a piece of data in to the btree.

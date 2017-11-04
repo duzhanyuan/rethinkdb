@@ -13,6 +13,7 @@
 #include "clustering/administration/tables/database_metadata.hpp"
 #include "clustering/generic/nonoverlapping_regions.hpp"
 #include "containers/name_string.hpp"
+#include "containers/optional.hpp"
 #include "containers/uuid.hpp"
 #include "rdb_protocol/protocol.hpp"
 #include "rpc/semilattice/joins/deletable.hpp"
@@ -46,6 +47,36 @@ ARCHIVE_PRIM_MAKE_RANGED_SERIALIZABLE(
     write_ack_config_t::SINGLE,
     write_ack_config_t::MAJORITY);
 
+class flush_interval_default_t {
+public:
+    bool operator==(flush_interval_default_t) const { return true; }
+    RDB_MAKE_ME_SERIALIZABLE_0(flush_interval_default_t);
+};
+class flush_interval_never_t {
+public:
+    bool operator==(flush_interval_never_t) const { return true; }
+    RDB_MAKE_ME_SERIALIZABLE_0(flush_interval_never_t);
+};
+
+class flush_interval_config_t {
+public:
+    // Use the default value, or never flush, or specify a non-negative double.
+    boost::variant<flush_interval_default_t,
+                   flush_interval_never_t,
+                   double> variant;
+};
+
+flush_interval_config_t default_flush_interval_config();
+
+RDB_MAKE_SERIALIZABLE_1(flush_interval_config_t, variant);
+
+class user_data_t {
+public:
+    ql::datum_t datum;
+};
+
+user_data_t default_user_data();
+
 /* `table_config_t` describes the complete contents of the `rethinkdb.table_config`
 artificial table. */
 
@@ -71,14 +102,19 @@ public:
     table_basic_config_t basic;
     std::vector<shard_t> shards;
     std::map<std::string, sindex_config_t> sindexes;
+    optional<write_hook_config_t> write_hook;
     write_ack_config_t write_ack_config;
     write_durability_t durability;
+    flush_interval_config_t flush_interval;
+    user_data_t user_data;  // has user-exposed name "data"
 };
+
+RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t);
 
 RDB_DECLARE_SERIALIZABLE(table_config_t::shard_t);
 RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t::shard_t);
-RDB_DECLARE_SERIALIZABLE(table_config_t);
-RDB_DECLARE_EQUALITY_COMPARABLE(table_config_t);
+
+flush_interval_t get_flush_interval(const table_config_t &);
 
 class table_shard_scheme_t {
 public:
@@ -141,6 +177,15 @@ public:
         table_config_and_shards_t new_config_and_shards;
     };
 
+    class write_hook_create_t {
+    public:
+        write_hook_config_t config;
+    };
+
+    class write_hook_drop_t {
+    public:
+    };
+
     class sindex_create_t {
     public:
         std::string name;
@@ -169,6 +214,11 @@ public:
         : change(std::move(_change)) { }
     explicit table_config_and_shards_change_t(sindex_rename_t &&_change)
         : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(write_hook_create_t &&_change)
+        : change(std::move(_change)) { }
+    explicit table_config_and_shards_change_t(write_hook_drop_t &&_change)
+        : change(std::move(_change)) { }
+
 
     /* Note, it's important that `apply_change` does not change
     `table_config_and_shards` if it returns false. */
@@ -195,7 +245,9 @@ private:
         set_table_config_and_shards_t,
         sindex_create_t,
         sindex_drop_t,
-        sindex_rename_t> change;
+        sindex_rename_t,
+        write_hook_create_t,
+        write_hook_drop_t> change;
 
     class apply_change_visitor_t
         : public boost::static_visitor<bool> {
@@ -208,6 +260,16 @@ private:
                 const set_table_config_and_shards_t &set_table_config_and_shards) const {
             *table_config_and_shards =
                 set_table_config_and_shards.new_config_and_shards;
+            return true;
+        }
+
+        result_type operator()(const write_hook_create_t &write_hook_create) const {
+            table_config_and_shards->config.write_hook.set(write_hook_create.config);
+            return true;
+        }
+
+        result_type operator()(UNUSED const write_hook_drop_t &write_hook_drop) const {
+            table_config_and_shards->config.write_hook = r_nullopt;
             return true;
         }
 
@@ -250,6 +312,8 @@ private:
 };
 
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::set_table_config_and_shards_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::write_hook_create_t);
+RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::write_hook_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_create_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_drop_t);
 RDB_DECLARE_SERIALIZABLE(table_config_and_shards_change_t::sindex_rename_t);

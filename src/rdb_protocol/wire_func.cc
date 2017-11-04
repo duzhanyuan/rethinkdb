@@ -1,13 +1,13 @@
 // Copyright 2010-2015 RethinkDB, all rights reserved.
 #include "rdb_protocol/wire_func.hpp"
 
-#include "containers/archive/boost_types.hpp"
+#include "containers/archive/optional.hpp"
 #include "containers/archive/stl_types.hpp"
 #include "containers/archive/archive.hpp"
 #include "rdb_protocol/env.hpp"
 #include "rdb_protocol/func.hpp"
 #include "rdb_protocol/protocol.hpp"
-#include "rdb_protocol/ql2.pb.h"
+#include "rdb_protocol/ql2proto.hpp"
 #include "rdb_protocol/term_walker.hpp"
 #include "stl_utils.hpp"
 
@@ -29,6 +29,10 @@ wire_func_t::wire_func_t(const raw_term_t &body,
 wire_func_t::wire_func_t(const wire_func_t &copyee)
     : func(copyee.func) { }
 
+
+std::string wire_func_t::print_source() const {
+    return func->print_source();
+}
 wire_func_t &wire_func_t::operator=(const wire_func_t &assignee) {
     func = assignee.func;
     return *this;
@@ -227,9 +231,21 @@ archive_result_t deserialize<cluster_version_t::v2_2>(
 }
 
 template <>
-archive_result_t deserialize<cluster_version_t::v2_3_is_latest>(
+archive_result_t deserialize<cluster_version_t::v2_3>(
         read_stream_t *s, wire_func_t *wf) {
-    return deserialize_wire_func<cluster_version_t::v2_3_is_latest>(s, wf);
+    return deserialize_wire_func<cluster_version_t::v2_3>(s, wf);
+}
+
+template <>
+archive_result_t deserialize<cluster_version_t::v2_4>(
+        read_stream_t *s, wire_func_t *wf) {
+    return deserialize_wire_func<cluster_version_t::v2_4>(s, wf);
+}
+
+template <>
+archive_result_t deserialize<cluster_version_t::v2_5_is_latest>(
+        read_stream_t *s, wire_func_t *wf) {
+    return deserialize_wire_func<cluster_version_t::v2_5_is_latest>(s, wf);
 }
 
 template <cluster_version_t W>

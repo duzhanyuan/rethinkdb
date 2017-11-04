@@ -162,7 +162,7 @@ ql::grouped_t<ql::stream_t> read_row_via_sindex(
         &dummy_env, // env_t
         ql::batchspec_t::default_for(ql::batch_type_t::NORMAL),
         std::vector<ql::transform_variant_t>(),
-        boost::optional<ql::terminal_variant_t>(),
+        optional<ql::terminal_variant_t>(),
         key_range_t::universe(),
         sorting_t::ASCENDING,
         require_sindexes_t::NO,
@@ -269,7 +269,8 @@ TPTEST(RDBBtree, SindexPostConstruct) {
             &io_backender,
             base_path_t("."),
             generate_uuid(),
-            update_sindexes_t::UPDATE);
+            update_sindexes_t::UPDATE,
+            which_cpu_shard_t{0, 1});
 
     cond_t dummy_interruptor;
 
@@ -312,7 +313,8 @@ TPTEST(RDBBtree, SindexEraseRange) {
             &io_backender,
             base_path_t("."),
             generate_uuid(),
-            update_sindexes_t::UPDATE);
+            update_sindexes_t::UPDATE,
+            which_cpu_shard_t{0, 1});
 
     cond_t dummy_interruptor;
 
@@ -399,7 +401,8 @@ TPTEST(RDBBtree, SindexInterruptionViaDrop) {
             &io_backender,
             base_path_t("."),
             generate_uuid(),
-            update_sindexes_t::UPDATE);
+            update_sindexes_t::UPDATE,
+            which_cpu_shard_t{0, 1});
 
     cond_t dummy_interruptor;
 
@@ -442,7 +445,8 @@ TPTEST(RDBBtree, SindexInterruptionViaStoreDelete) {
             &io_backender,
             base_path_t("."),
             generate_uuid(),
-            update_sindexes_t::UPDATE));
+            update_sindexes_t::UPDATE,
+            which_cpu_shard_t{0, 1}));
 
     insert_rows(0, (TOTAL_KEYS_TO_INSERT * 9) / 10, store.get());
 

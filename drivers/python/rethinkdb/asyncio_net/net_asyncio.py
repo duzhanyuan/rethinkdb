@@ -1,8 +1,9 @@
-# Copyright 2015 RethinkDB, all rights reserved.
+# Copyright 2015-2016 RethinkDB, all rights reserved.
 
 import asyncio
 import contextlib
 import socket
+import ssl
 import struct
 
 from . import ql2_pb2 as p
@@ -71,6 +72,25 @@ class AsyncioCursor(Cursor):
         Cursor.__init__(self, *args, **kwargs)
         self.new_response = asyncio.Future()
 
+    @asyncio.coroutine
+    def __aiter__(self):
+        return self
+
+    @asyncio.coroutine
+    def __anext__(self):
+        try:
+            return (yield from self._get_next(None))
+        except ReqlCursorEmpty:
+            raise StopAsyncIteration
+
+    @asyncio.coroutine
+    def close(self):
+        if self.error is None:
+            self.error = self._empty_error()
+            if self.conn.is_open():
+                self.outstanding_requests += 1
+                yield from self.conn._parent._stop(self)
+
     def _extend(self, res):
         Cursor._extend(self, res)
         self.new_response.set_result(True)
@@ -84,6 +104,8 @@ class AsyncioCursor(Cursor):
         waiter = reusable_waiter(self.conn._io_loop, timeout)
         while len(self.items) == 0 and self.error is None:
             self._maybe_fetch_batch()
+            if self.error is not None:
+                raise self.error
             with translate_timeout_errors():
                 yield from waiter(asyncio.shield(self.new_response))
         # If there is a (non-empty) error to be received, we return True, so the
@@ -139,13 +161,19 @@ class ConnectionInstance(object):
     @asyncio.coroutine
     def connect(self, timeout):
         try:
-            self._streamreader, self._streamwriter = yield from \
-                asyncio.open_connection(self._parent.host, self._parent.port,
-                                        loop=self._io_loop)
-            self._streamwriter.get_extra_info('socket').setsockopt(
-                                socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self._streamwriter.get_extra_info('socket').setsockopt(
-                                socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            ssl_context = None
+            if len(self._parent.ssl) > 0:
+                ssl_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+                if hasattr(ssl_context, "options"):
+                    ssl_context.options |= getattr(ssl, "OP_NO_SSLv2", 0)
+                    ssl_context.options |= getattr(ssl, "OP_NO_SSLv3", 0)
+                ssl_context.verify_mode = ssl.CERT_REQUIRED
+                ssl_context.check_hostname = True # redundant with match_hostname
+                ssl_context.load_verify_locations(self._parent.ssl["ca_certs"])
+                
+            self._streamreader, self._streamwriter = yield from asyncio.open_connection(self._parent.host, self._parent.port, loop=self._io_loop, ssl=ssl_context)
+            self._streamwriter.get_extra_info('socket').setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self._streamwriter.get_extra_info('socket').setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         except Exception as err:
             raise ReqlDriverError('Could not connect to %s:%s. Error: %s' %
                                   (self._parent.host, self._parent.port, str(err)))
@@ -202,7 +230,8 @@ class ConnectionInstance(object):
             cursor._error(err_message)
 
         for query, future in iter(self._user_queries.values()):
-            future.set_exception(ReqlDriverError(err_message))
+            if not future.done():
+                future.set_exception(ReqlDriverError(err_message))
 
         self._user_queries = { }
         self._cursor_cache = { }
@@ -278,6 +307,20 @@ class Connection(ConnectionBase):
             self.port = int(self.port)
         except ValueError:
             raise ReqlDriverError("Could not convert port %s to an integer." % self.port)
+
+    @asyncio.coroutine
+    def __aenter__(self):
+        return self
+
+    @asyncio.coroutine
+    def __aexit__(self, exception_type, exception_val, traceback):
+        yield from self.close(False)
+
+    @asyncio.coroutine
+    def _stop(self, cursor):
+        self.check_open()
+        q = Query(pQuery.STOP, cursor.query.token, None, None)
+        return (yield from self._instance.run_query(q, True))
 
     @asyncio.coroutine
     def reconnect(self, noreply_wait=True, timeout=None):
